@@ -1,0 +1,59 @@
+name: Kaizen Twilight
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # 4:00 UTC — adjust to your timezone
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  kaizen:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      REPO_ROOT: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure git
+        run: |
+          git config user.name "Kaizen Twilight"
+          git config user.email "kaizen@users.noreply.github.com"
+
+      - name: Layer 1 — Survey
+        run: python survey.py
+
+      - name: Layer 2 — Propose
+        run: python propose.py
+
+      - name: Layer 3 — Approve
+        run: python approve.py
+
+      - name: Layer 4 — Deploy
+        run: python deploy.py
+
+      - name: Layer 5 — Report
+        run: python report.py
+
+      - name: Commit report and push
+        run: |
+          git add decisions/ improvements/
+          git diff --cached --quiet || git commit -m "[kaizen] nightly report $(date +%Y-%m-%d)"
+          git push

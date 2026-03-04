@@ -1,0 +1,51 @@
+# Kaizen Twilight — Configuration
+# Copy this file to config.yaml and customize for your repo
+
+# What to scan each night
+survey:
+  targets:
+    - path: "tasks.md"
+      prompt: "Look for stale tasks, busywork that could be automated, or misaligned priorities. What's one 1% improvement?"
+    - path: "goals.md"
+      prompt: "Check alignment between goals and top priority. Are any stale or conflicting? What's one 1% improvement?"
+    - path: "notes/"
+      prompt: "Read recent notes. What was done manually that could be automated? What's one 1% improvement?"
+      type: "directory_recent"
+      days: 3
+
+# Safety rails — files that should NEVER be auto-deployed (always queued for review)
+protected_files:
+  - "goals.md"
+  - "README.md"
+
+# Max auto-deployments per night
+max_auto_deploys: 3
+
+# Auto-approval rules
+approval:
+  auto_approve:
+    - trivial
+    - small
+  queue_for_review:
+    - medium
+
+# Duplicate prevention
+cooldown:
+  rejected_days: 30
+  deployed_days: 14
+
+# Email settings
+email:
+  enabled: true
+  from: "you@example.com"
+  to:
+    - "you@example.com"
+  subject_template: "Kaizen Twilight — {count} improvements overnight"
+
+# Model routing
+models:
+  survey: "claude-haiku-4-5-20251001"
+  propose: "claude-sonnet-4-6"
+  report: "claude-sonnet-4-6"
+
+repo_root: "."

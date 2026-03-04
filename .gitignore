@@ -1,0 +1,7 @@
+config.yaml
+__pycache__/
+*.pyc
+_survey_results.json
+_proposals.json
+_approved.json
+_deploy_results.json
