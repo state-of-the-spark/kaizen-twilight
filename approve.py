@@ -1,6 +1,6 @@
 """
 Kaizen Twilight — Layer 3: Approve
-Auto-approves trivial/small changes. Queues medium+ for review.
+Auto-approves trivial/small changes. Queues medium+ for Grant's review.
 Enforces safety rails on protected files.
 """
 
@@ -12,7 +12,7 @@ import yaml
 
 
 def load_config(repo_root: str) -> dict:
-    config_path = Path(repo_root) / "config.yaml"
+    config_path = Path(repo_root) / "agents" / "kaizen-twilight" / "config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 
@@ -27,6 +27,17 @@ def is_protected(file_path: str, config: dict) -> bool:
     return False
 
 
+def is_redlined(file_path: str, config: dict) -> bool:
+    """Check if a file is redlined — the agent may never edit it, even queued.
+    Proposals targeting a redlined file are converted to decision drafts in deploy."""
+    redlined = config.get("redline_files", [])
+    normalized = file_path.replace("\\", "/")
+    for r in redlined:
+        if normalized == r or normalized.endswith("/" + r):
+            return True
+    return False
+
+
 def run_approve(repo_root: str) -> dict:
     """Review proposals and approve/queue them."""
     config = load_config(repo_root)
@@ -34,7 +45,7 @@ def run_approve(repo_root: str) -> dict:
     max_deploys = config.get("max_auto_deploys", 3)
 
     # Load proposals
-    proposals_path = Path(repo_root) / "_proposals.json"
+    proposals_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_proposals.json"
     with open(proposals_path) as f:
         data = json.load(f)
 
@@ -42,8 +53,8 @@ def run_approve(repo_root: str) -> dict:
     if not proposals:
         print("=== Kaizen Twilight — Layer 3: Approve ===")
         print("  No proposals to review. Skipping.")
-        result = {"approved": [], "queued": [], "rejected": []}
-        output_path = Path(repo_root) / "_approved.json"
+        result = {"approved": [], "queued": [], "rejected": [], "redline_drafts": []}
+        output_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_approved.json"
         with open(output_path, "w") as f:
             json.dump(result, f, indent=2)
         return result
@@ -56,6 +67,7 @@ def run_approve(repo_root: str) -> dict:
     approved = []
     queued = []
     rejected = []
+    redline_drafts = []
     auto_deploy_count = 0
 
     for prop in proposals:
@@ -63,10 +75,23 @@ def run_approve(repo_root: str) -> dict:
         effort = prop.get("effort", "medium")
         file_path = prop.get("file", "")
 
+        # HARD REDLINE: the agent may never edit these files (e.g. goals.md).
+        # Convert the proposal into a decision draft for Grant to sign. The
+        # original file is never touched. (Decision C, 2026-05-27.)
+        if is_redlined(file_path, config):
+            prop["status"] = "redline_draft"
+            prop["redline_reason"] = (
+                f"{file_path} is redlined — agent cannot edit it. "
+                "Converted to a decision draft for Grant to sign."
+            )
+            redline_drafts.append(prop)
+            print(f"  [{prop_id}] REDLINE — {file_path} -> decision draft for Grant")
+            continue
+
         # Safety rail: protected files always queue
         if is_protected(file_path, config):
             prop["status"] = "queued"
-            prop["queue_reason"] = "Protected file — requires your review"
+            prop["queue_reason"] = "Protected file — requires Grant's review"
             queued.append(prop)
             print(f"  [{prop_id}] QUEUED — protected file: {file_path}")
             continue
@@ -87,7 +112,7 @@ def run_approve(repo_root: str) -> dict:
             print(f"  [{prop_id}] APPROVED — effort: {effort}, file: {file_path}")
         else:
             prop["status"] = "queued"
-            prop["queue_reason"] = f"Effort level '{effort}' requires your review"
+            prop["queue_reason"] = f"Effort level '{effort}' requires Grant's review"
             queued.append(prop)
             print(f"  [{prop_id}] QUEUED — effort: {effort}")
 
@@ -107,16 +132,17 @@ def run_approve(repo_root: str) -> dict:
         else:
             valid_approved.append(prop)
 
-    print(f"\n  Results: {len(valid_approved)} approved, {len(queued)} queued, {len(rejected)} rejected")
+    print(f"\n  Results: {len(valid_approved)} approved, {len(queued)} queued, {len(rejected)} rejected, {len(redline_drafts)} redline-draft(s)")
 
     result = {
         "approved": valid_approved,
         "queued": queued,
         "rejected": rejected,
+        "redline_drafts": redline_drafts,
     }
 
     # Write results
-    output_path = Path(repo_root) / "_approved.json"
+    output_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_approved.json"
     with open(output_path, "w") as f:
         json.dump(result, f, indent=2, default=str)
     print(f"  Results written to {output_path}")

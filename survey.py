@@ -14,7 +14,7 @@ import yaml
 
 
 def load_config(repo_root: str) -> dict:
-    config_path = Path(repo_root) / "config.yaml"
+    config_path = Path(repo_root) / "agents" / "kaizen-twilight" / "config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 
@@ -26,16 +26,17 @@ def read_file(repo_root: str, path: str) -> str | None:
     return full_path.read_text(encoding="utf-8", errors="replace")
 
 
-def read_recent_directory(repo_root: str, path: str, days: int = 3) -> str:
-    """Read files from the last N days from a directory."""
-    target_dir = Path(repo_root) / path
-    if not target_dir.exists():
-        return f"Directory not found: {path}"
+def read_recent_signals(repo_root: str, days: int = 3) -> str:
+    """Read signal files from the last N days."""
+    signals_dir = Path(repo_root) / "signals"
+    if not signals_dir.exists():
+        return "No signals directory found."
 
     cutoff = datetime.now() - timedelta(days=days)
     entries = []
 
-    for f in sorted(target_dir.glob("*.md"), reverse=True):
+    for f in sorted(signals_dir.glob("*.md"), reverse=True):
+        # Signal files are named like 2026-03-04-session-description.md
         name = f.stem
         try:
             date_str = "-".join(name.split("-")[:3])
@@ -47,7 +48,27 @@ def read_recent_directory(repo_root: str, path: str, days: int = 3) -> str:
             continue
 
     if not entries:
-        return f"No recent files found in {path}."
+        return "No recent signals found."
+    return "\n\n---\n\n".join(entries)
+
+
+def read_skill_files(repo_root: str) -> str:
+    """Read all SKILL.md files from .claude/skills/."""
+    skills_dir = Path(repo_root) / ".claude" / "skills"
+    if not skills_dir.exists():
+        return "No skills directory found."
+
+    entries = []
+    for skill_file in sorted(skills_dir.glob("*/SKILL.md")):
+        skill_name = skill_file.parent.name
+        content = skill_file.read_text(encoding="utf-8", errors="replace")
+        # Truncate very long skills to save tokens
+        if len(content) > 3000:
+            content = content[:3000] + "\n... [truncated]"
+        entries.append(f"## Skill: {skill_name}\n{content}")
+
+    if not entries:
+        return "No skill files found."
     return "\n\n---\n\n".join(entries)
 
 
@@ -104,7 +125,9 @@ def run_survey(repo_root: str) -> dict:
 
         # Load content based on type
         if target_type == "directory_recent":
-            content = read_recent_directory(repo_root, path, target.get("days", 3))
+            content = read_recent_signals(repo_root, target.get("days", 3))
+        elif target_type == "glob":
+            content = read_skill_files(repo_root)
         else:
             content = read_file(repo_root, path)
 
@@ -145,7 +168,7 @@ if __name__ == "__main__":
     repo_root = os.environ.get("REPO_ROOT", ".")
     results = run_survey(repo_root)
     # Write results for next layer
-    output_path = Path(repo_root) / "_survey_results.json"
+    output_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_survey_results.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\n  Results written to {output_path}")

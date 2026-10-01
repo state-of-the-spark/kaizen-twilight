@@ -14,7 +14,7 @@ import yaml
 
 
 def load_config(repo_root: str) -> dict:
-    config_path = Path(repo_root) / "config.yaml"
+    config_path = Path(repo_root) / "agents" / "kaizen-twilight" / "config.yaml"
     with open(config_path) as f:
         return yaml.safe_load(f)
 
@@ -70,15 +70,16 @@ For each finding, output a JSON array of objects with these fields:
 - "file": The file path to modify (relative to repo root)
 - "effort": "trivial" | "small" | "medium"
   - trivial: config tweaks, typo fixes, updating stale data/values
-  - small: rewriting a section, adjusting workflow logic, updating references
-  - medium: new automations, architecture changes, anything touching core config or identity files
+  - small: rewriting a skill section, adjusting workflow logic, updating references
+  - medium: new automations, architecture changes, anything touching voice/soul/CLAUDE.md
 - "impact": Why this matters (1 sentence)
+- "ember_check": true if this serves coaching + speaking path, false if pure ops
 - "category": "fix" | "optimize" | "automate" | "align"
 
 Rules:
 - Be extremely specific about the file and change. Vague proposals are useless.
 - If a finding doesn't translate to a concrete file change, skip it.
-- If the file path is a directory (like notes/), the change should specify what new file or automation to create.
+- If the file path is a directory (like signals/), the change should specify what new file or automation to create.
 - Output ONLY the JSON array. No preamble, no markdown fences, no explanation.
 - If no findings translate to proposals, output: []
 
@@ -95,7 +96,7 @@ def run_propose(repo_root: str) -> dict:
     today = datetime.now().strftime("%Y-%m-%d")
 
     # Load survey results
-    survey_path = Path(repo_root) / "_survey_results.json"
+    survey_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_survey_results.json"
     with open(survey_path) as f:
         survey = json.load(f)
 
@@ -104,7 +105,7 @@ def run_propose(repo_root: str) -> dict:
         print("=== Kaizen Twilight — Layer 2: Propose ===")
         print("  No findings to propose on. Skipping.")
         result = {"proposals": [], "tokens": {"input": 0, "output": 0}}
-        output_path = Path(repo_root) / "_proposals.json"
+        output_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_proposals.json"
         with open(output_path, "w") as f:
             json.dump(result, f, indent=2)
         return result
@@ -176,7 +177,7 @@ def run_propose(repo_root: str) -> dict:
 if __name__ == "__main__":
     repo_root = os.environ.get("REPO_ROOT", ".")
     results = run_propose(repo_root)
-    output_path = Path(repo_root) / "_proposals.json"
+    output_path = Path(repo_root) / "agents" / "kaizen-twilight" / "_proposals.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
     print(f"\n  Results written to {output_path}")
