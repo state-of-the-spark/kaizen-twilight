@@ -6,6 +6,7 @@ Snapshots original files, applies approved changes, updates the idea ledger, and
 import json
 import os
 import shutil
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -171,6 +172,20 @@ def write_redline_draft(repo_root: str, proposal: dict, today: str) -> str:
     drafts_dir.mkdir(parents=True, exist_ok=True)
     draft_path = drafts_dir / f"{today}-linchpin-revision-DRAFT.md"
 
+    # SETTLED-DECISIONS GUARD (Grant, 2026-10-16). The $18,560/mo base (Q3 2026
+    # QBO gross / 3) is decided; the $20,139 figure is an August TTM snapshot, a
+    # different window. Never re-file it. Also skip any observation that matches
+    # a draft Grant already dismissed or accepted.
+    text = f"{finding} {change}"
+    if any(k in text for k in ("18,560", "20,139", "241,674", "TTM")):
+        return ""
+    for old in drafts_dir.glob("*-linchpin-revision-DRAFT.md"):
+        head = old.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^status:\s*(dismissed|accepted|signed)", head, re.M):
+            m = re.search(r"## What the agent observed\s+(.+?)\n\n", head, re.S)
+            if m and finding.strip() and m.group(1).strip()[:80] == finding.strip()[:80]:
+                return ""
+
     body = f"""---
 type: decision
 status: draft
@@ -265,6 +280,10 @@ def run_deploy(repo_root: str) -> dict:
         prop_id = prop.get("id", "unknown")
         try:
             draft_rel = write_redline_draft(repo_root, prop, today)
+            if not draft_rel:
+                prop["status"] = "redline_draft_skipped_settled"
+                print(f"  [{prop_id}] REDLINE DRAFT SKIPPED (settled/dismissed decision)")
+                continue
             prop["status"] = "redline_draft_written"
             prop["draft_file"] = draft_rel
             committed_files.append(draft_rel)
