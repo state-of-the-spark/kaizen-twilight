@@ -5,6 +5,7 @@ Deduplicates against the idea ledger (log.yaml).
 """
 
 import json
+import re
 import os
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,12 @@ def get_skip_summaries(log: dict, config: dict) -> list[str]:
     for entry in log.get("entries", []):
         status = entry.get("status", "")
         summary = entry.get("summary", "")
+
+        # Open items waiting on Grant must not be re-proposed every night
+        # (2026-10-27: voice.md had 10 near-identical queued copies).
+        if status in ("queued", "proposed"):
+            skip.append(summary)
+            continue
 
         if status == "rejected":
             cooldown = entry.get("cooldown_until")
@@ -85,6 +92,36 @@ Rules:
 
 SKIP these topics (already handled or on cooldown):
 {skip_list}"""
+
+
+PATH_RE = re.compile(r"(?:signals|reference|research|decisions|tools|agents|outputs|improvements|\.claude|\.github)/[\w./-]+\.(?:md|ya?ml|py|js|json|gs|html)")
+
+
+def verify_proposals(repo_root: str, proposals: list, log: dict) -> list:
+    """Drop proposals that cite files that do not exist, that only claim truncation,
+    or that target a file which already has an open (queued) item. Added 2026-10-27."""
+    root = Path(repo_root)
+    open_files = {e.get("file") for e in log.get("entries", []) if e.get("status") in ("queued", "proposed")}
+    kept = []
+    for prop in proposals:
+        text = " ".join(str(prop.get(k, "")) for k in ("finding", "change", "impact"))
+        target = str(prop.get("file", "")).strip()
+        reason = None
+        if target and target in open_files:
+            reason = f"open item already exists for {target}"
+        elif target and not target.endswith("/") and not (root / target).exists() and "create" not in text.lower():
+            reason = f"target file does not exist: {target}"
+        elif re.search(r"truncat|cut off mid|mid-sentence", text, re.I):
+            reason = "truncation claim (scanner artifact)"
+        else:
+            missing = [m for m in PATH_RE.findall(text) if m != target and not (root / m).exists()]
+            if missing:
+                reason = f"cites missing file(s): {missing}"
+        if reason:
+            print(f"  DROPPED (verify): {prop.get('finding', '')[:80]} -- {reason}")
+        else:
+            kept.append(prop)
+    return kept
 
 
 def run_propose(repo_root: str) -> dict:
@@ -158,6 +195,8 @@ def run_propose(repo_root: str) -> dict:
     except json.JSONDecodeError:
         print(f"  WARNING: Failed to parse proposal JSON. Raw response:\n{response_text}")
         proposals = []
+
+    proposals = verify_proposals(repo_root, proposals, log)
 
     # Assign IDs
     for i, prop in enumerate(proposals, 1):

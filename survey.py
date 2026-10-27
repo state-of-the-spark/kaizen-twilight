@@ -64,12 +64,16 @@ def read_skill_files(repo_root: str) -> str:
         content = skill_file.read_text(encoding="utf-8", errors="replace")
         # Truncate very long skills to save tokens
         if len(content) > 3000:
-            content = content[:3000] + "\n... [truncated]"
+            content = content[:3000] + "\n... [TRUNCATED BY SCANNER, not by the author]"
         entries.append(f"## Skill: {skill_name}\n{content}")
 
     if not entries:
         return "No skill files found."
-    return "\n\n---\n\n".join(entries)
+    # Full registry first, so a finding never claims a skill is "missing" just because
+    # its body was cut off by the token budget (2026-10-27: false "/setup not defined").
+    names = sorted(p.parent.name for p in skills_dir.glob("*/SKILL.md"))
+    registry = "## Skill registry (complete list of callable /skills)\n" + ", ".join("/" + n for n in names)
+    return registry + "\n\n---\n\n" + "\n\n---\n\n".join(entries)
 
 
 def call_haiku(client: anthropic.Anthropic, model: str, system_prompt: str,
@@ -98,6 +102,10 @@ Rules:
 - Be practical: only suggest changes that can be made with a file edit or config tweak
 - Focus on: stale data, broken references, missing automation, misalignment with goals
 - Skip: cosmetic changes, subjective rewording, adding comments or docs
+- Never report that content is truncated, cut off or incomplete when it ends with "[TRUNCATED BY SCANNER...]"; the scanner cut it, not the author
+- Never claim a skill, file or command is missing unless you can see the complete list (use the Skill registry line)
+- Only name file paths you can see in the content; never invent a source file name
+- Quote the exact text (5-15 words) your finding is about, in double quotes
 - Output format: A short paragraph (2-4 sentences) describing the finding and what to change
 
 If the content looks healthy and you can't find a real improvement, respond with exactly: NO_FINDING"""
@@ -136,8 +144,10 @@ def run_survey(repo_root: str) -> dict:
             continue
 
         # Truncate to avoid blowing token budget
-        if len(content) > 8000:
-            content = content[:8000] + "\n... [truncated]"
+        # Raised 2026-10-27: an 8K cut made the scanner report real files as "truncated mid-sentence".
+        limit = 40000 if target_type == "glob" else 30000
+        if len(content) > limit:
+            content = content[:limit] + "\n... [TRUNCATED BY SCANNER, not by the author]"
 
         result = call_haiku(client, model, SYSTEM_PROMPT, content, prompt)
         total_tokens["input"] += result["input_tokens"]
